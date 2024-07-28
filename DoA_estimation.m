@@ -9,7 +9,7 @@ clc
 
 M = 8;      % sensors
 K = 2;      % number of signals (sources)
-N = 2200;     % number of observations
+N = 5;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
 Pn = .09;    % Noise power
 sig_pr = [.9 .9];    % signals' power
@@ -43,7 +43,7 @@ D = diag(D);
 Q = Q (:,I);       % Sort the eigenvectors to put signal eigenvectors first 
 
 Qs = Q (:,1:K);       % Get the signal eigenvectors
-Qn = Q(:,K+1:M);    % Get the noise eigenvectors
+Qn = Q(:,K+4:M);    % Get the noise eigenvectors
 
 %% Grid search (or we can solve for the roots)
 for k=1:length(angles)
@@ -59,13 +59,16 @@ spectrum_cap(j,:) = search_cap;
 
 
 plot(angles,spectrum_music,Color=[0 .2 .9]); hold on; grid on;
-% plot(angles,spectrum_bf,Color=[0.8, 0.3, 0.1]);
-% plot(angles,spectrum_cap,Color=[0.5, 0.2, 0.6]);
+
 
 xline(DoA,'-.',LineWidth=.9)
-legend('MUSIC','Capon BF','Actual DoAs')
+legend('MUSIC','Actual DoAs')
 title(['Spatial Spectrum : SNR = ',num2str(10*log10(max(sig_pr)/Pn)),'dB : Resolution = ',num2str(Resolution),' degrees'])
 xlabel('Angle [degrees]')
+
+% figure 
+% plot(angles,spectrum_bf,Color=[0.8, 0.3, 0.1]);
+% plot(angles,spectrum_cap,Color=[0.5, 0.2, 0.6]);
 
 % figure
 % plot(angles,spectrum_bf,Color=[0.8, 0.3, 0.1]);hold on; grid on;
@@ -75,6 +78,9 @@ xlabel('Angle [degrees]')
 % legend('BF','Capon BF','Actual DoAs')
 % title(['Spatial Spectrum : SNR = ',num2str(10*log10(max(sig_pr)/Pn)),'dB : Resolution = ',num2str(360/(M)),' degrees'])
 % xlabel('Angle in degrees')
+
+[~,index] = maxk(spectrum_music,K);
+estimated_angles_music = angles(index)
 %% Analytical estimation
 
 A_est = X*S'*inv(S*S');      % estimate of the steering matrix
@@ -101,10 +107,12 @@ disp(['norm(R - R_hat) = ',num2str(norm(R-R_hat,"fro"))])
 
 %% Root MUSIC
 
-F = fftshift( sum( abs(fft(Qn,256)).^2 ,2) );
-
-[mini,I] = mink(F,K);
-electric_angles = (I-1).*2*pi/M
+Ftr1 = fftshift( sum( abs(fft(Qn,3*M)).^2 ,2) );
+Ftr2 = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
+[mini,I] = mink(Ftr1,K);
+electric_angles = (I-1).*2*pi/M;
 figure
-plot(1./F)
+plot(1./Ftr1); hold on; grid on;
+plot(1./Ftr2); 
+legend('original','trial')
 % AoA = asin( electric_angles./(d*2*pi) )*180/pi
