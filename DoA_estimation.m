@@ -7,9 +7,9 @@ clc
 % 2- Capon's Beamformer
 % 3- spectrum-MUSIC algorithm
 
-M = 8;      % sensors
+M = 4;      % sensors
 K = 2;      % number of signals (sources)
-N = 5;     % number of observations
+N = 5000;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
 Pn = .09;    % Noise power
 sig_pr = [.9 .9];    % signals' power
@@ -43,14 +43,14 @@ D = diag(D);
 Q = Q (:,I);       % Sort the eigenvectors to put signal eigenvectors first 
 
 Qs = Q (:,1:K);       % Get the signal eigenvectors
-Qn = Q(:,K+4:M);    % Get the noise eigenvectors
+Qn = Q(:,K+1:M);    % Get the noise eigenvectors
 
 %% Grid search (or we can solve for the roots)
-for k=1:length(angles)
+for alpha=1:length(angles)
     % Compute MUSIC spectrum (spatial-spectrum)
-    search_music(k) = abs( 1/(a1(:,k)'*Qn*Qn'*a1(:,k)) ); 
-    search_bf(k) = abs(a1(:,k)'*R*a1(:,k)/(a1(:,k)'*a1(:,k)));
-    search_cap(k) = abs(20/( a1(:,k)'*inv(R)*a1(:,k) ));
+    search_music(alpha) = abs( 1/(a1(:,alpha)'*Qn*Qn'*a1(:,alpha)) ); 
+    search_bf(alpha) = abs(a1(:,alpha)'*R*a1(:,alpha)/(a1(:,alpha)'*a1(:,alpha)));
+    search_cap(alpha) = abs(20/( a1(:,alpha)'*inv(R)*a1(:,alpha) ));
 %     search_cap_cn = 
 end
 spectrum_music(j,:) = search_music;
@@ -69,6 +69,7 @@ xlabel('Angle [degrees]')
 % figure 
 % plot(angles,spectrum_bf,Color=[0.8, 0.3, 0.1]);
 % plot(angles,spectrum_cap,Color=[0.5, 0.2, 0.6]);
+% xline(DoA,'-.',LineWidth=.9)
 
 % figure
 % plot(angles,spectrum_bf,Color=[0.8, 0.3, 0.1]);hold on; grid on;
@@ -79,33 +80,49 @@ xlabel('Angle [degrees]')
 % title(['Spatial Spectrum : SNR = ',num2str(10*log10(max(sig_pr)/Pn)),'dB : Resolution = ',num2str(360/(M)),' degrees'])
 % xlabel('Angle in degrees')
 
-[~,index] = maxk(spectrum_music,K);
-estimated_angles_music = angles(index)
+%%% Peak detection
+% Step 1: Initial peak detection
+[peaks, locs] = findpeaks(spectrum_music);
+
+% Step 2: Determine a dynamic threshold
+threshold = mean(spectrum_music);
+
+% Step 3: Identify significant peaks
+AoA_peaks = peaks(peaks > threshold);
+AoA_music_search = angles( locs(peaks > threshold) )
+
 %% Analytical estimation
 
 A_est = X*S'*inv(S*S');      % estimate of the steering matrix
+
+
 P = S*S'./N;
 [Es,Ls] = eig(A*P*A');
-[Es_hat,Ls_hat] = nnzmat(Es,Ls);
+[Es_part,Ls_part] = nnzmat(Es,Ls);
+
+
 Rn = Noise*Noise'./N;
 [En,Ln] = eig(Rn);
+[Ln ,In]  = sort(diag(Ln),1,'descend');   %Find K largest eigenvalues
+En = En (:,In);
+En_part = En(:,K+1:end);
+Ln_part = Ln(K+1:end);
 Ln = diag(Ln);
-Ln_hat = Ln(K+1:end);
-Ln_hat = diag(Ln_hat);
-En_hat = En(:,K+1:end);
-disp('R_hat = A*P*A'' + Cn')
-R_hat = A*P*A' + Rn;
-[Q_hat,D_hat] = eig(R_hat);
-Ln = diag(Ln);
+Ln_part = diag(Ln_part);
 
-D_hat = sort(diag(D_hat),1,'descend');
-% Ls = sort(diag(Ls),1,'descend')
-% Ln = sort(diag(Ln),1,'descend')
-% D = diag(D)
+disp('R_sum = A*P*A'' + Cn')
+R_hat = A*P*A' + Rn;
+[Q_sum,D_sum] = eig(R_hat);
+[D_sum,I_sum] = sort(diag(D_sum),1,'descend');
+Q_sum = Q_sum(:,I_sum);
+Q_sum_s = Q_sum(:,1:K);
+Q_sum_n = Q_sum(:,K+1:end);
+
+
 disp(['norm(R) = ',num2str(norm(R,"fro"))])
 disp(['norm(R - R_hat) = ',num2str(norm(R-R_hat,"fro"))])
 
-%% Root MUSIC
+%% Root MUSIC (using fft approach)
 
 Ftr1 = fftshift( sum( abs(fft(Qn,3*M)).^2 ,2) );
 Ftr2 = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
