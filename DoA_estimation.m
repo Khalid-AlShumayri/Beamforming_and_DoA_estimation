@@ -7,8 +7,8 @@ clc
 % 2- Capon's Beamformer
 % 3- spectrum-MUSIC algorithm
 
-M = 16;      % sensors
-K = 4;      % number of signals (sources)
+M = 5;      % sensors
+K = 3;      % number of signals (sources)
 N = 10;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
 Pn = .09;    % Noise power
@@ -19,7 +19,7 @@ iter = 1;
 j = 1;
 
 % Compute steering Matrix and vectors
-angles=(-90:1:90);       % for grid search
+angles=(-90:.5:90);       % for grid search
 
 % far-field assumption 
 a1 = exp(-1i*2*pi*d*(0:M-1)'*sin([angles(:).']*pi/180));  
@@ -30,7 +30,7 @@ Noise = sqrt(Pn/2)*( randn(M,N) + 1j*randn(M,N) );
 X = A*S + Noise;
 
 % generate coherent sources 
-correlation_matrix = toeplitz([1 .4 .2 .1]);
+correlation_matrix = toeplitz([1 .2 .1]);
 L = chol(correlation_matrix,"lower");
 S_corr = L*S;
 X_corr = A*S_corr + Noise;
@@ -107,23 +107,21 @@ A_est = X*S'*inv(S*S');      % estimate of the steering matrix
 
 
 P = S*S'./N;
-[Es,Ls] = eig(A*P*A');
+[Us,Ls] = eig(A*P*A');
 [Ls ,Is]  = sort(diag(Ls),1,'descend');   %Find K largest eigenvalues
-Es = Es (:,Is);
-Es_part = Es(:,1:K);
-Ls_part = Ls(1:K);
+Us = Us (:,Is);
+Us = Us(:,1:K);
+Ls = Ls(1:K);
 Ls = diag(Ls);
-Ls_part = diag(Ls_part);
 
 
 Rn = Noise*Noise'./N;
-[En,Ln] = eig(Rn);
+[Un,Ln] = eig(Rn);
 [Ln ,In]  = sort(diag(Ln),1,'descend');   
-En = En (:,In);
-En_part = En(:,K+1:end);
-Ln_part = Ln(K+1:end);
+Un = Un (:,In);
+Un = Un(:,K+1:end);
+Ln = Ln(K+1:end);
 Ln = diag(Ln);
-Ln_part = diag(Ln_part);
 
 disp('R_sum = A*P*A'' + Cn')
 R_hat = A*P*A' + Rn;
