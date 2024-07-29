@@ -8,8 +8,8 @@ clc
 % 3- spectrum-MUSIC algorithm
 
 M = 16;      % sensors
-K = 5;      % number of signals (sources)
-N = 100;     % number of observations
+K = 4;      % number of signals (sources)
+N = 10;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
 Pn = .09;    % Noise power
 sig_pr = 0.9.*ones(1,K);    % signals' power
@@ -25,8 +25,16 @@ angles=(-90:1:90);       % for grid search
 a1 = exp(-1i*2*pi*d*(0:M-1)'*sin([angles(:).']*pi/180));  
 A  = generate_steering_matrix(M,d,DoA);
 S = diag(sqrt(sig_pr./2))*(randn(K,N)+1j*randn(K,N));
+
 Noise = sqrt(Pn/2)*( randn(M,N) + 1j*randn(M,N) );
 X = A*S + Noise;
+
+% generate coherent sources 
+correlation_matrix = toeplitz([1 .4 .2 .1]);
+L = chol(correlation_matrix,"lower");
+S_corr = L*S;
+X_corr = A*S_corr + Noise;
+R_corr = X_corr*X_corr'./N;
 
 %% MUSIC Algorithm
 
