@@ -7,13 +7,13 @@ clc
 % 2- Capon's Beamformer
 % 3- spectrum-MUSIC algorithm
 
-M = 4;      % sensors
-K = 2;      % number of signals (sources)
-N = 5000;     % number of observations
+M = 16;      % sensors
+K = 5;      % number of signals (sources)
+N = 100;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
 Pn = .09;    % Noise power
-sig_pr = [.9 .9];    % signals' power
-DoA = [-20 0];
+sig_pr = 0.9.*ones(1,K);    % signals' power
+DoA = -88 + 178*rand(1,K);
 Resolution = 2*180/pi/M;
 iter = 1;
 j = 1;
@@ -24,7 +24,7 @@ angles=(-90:1:90);       % for grid search
 % far-field assumption 
 a1 = exp(-1i*2*pi*d*(0:M-1)'*sin([angles(:).']*pi/180));  
 A  = generate_steering_matrix(M,d,DoA);
-S = diag(sqrt(sig_pr))*(randn(K,N)+1j*randn(K,N));
+S = diag(sqrt(sig_pr./2))*(randn(K,N)+1j*randn(K,N));
 Noise = sqrt(Pn/2)*( randn(M,N) + 1j*randn(M,N) );
 X = A*S + Noise;
 
@@ -80,7 +80,8 @@ xlabel('Angle [degrees]')
 % title(['Spatial Spectrum : SNR = ',num2str(10*log10(max(sig_pr)/Pn)),'dB : Resolution = ',num2str(360/(M)),' degrees'])
 % xlabel('Angle in degrees')
 
-%%% Peak detection
+%% Peak detection and error
+
 % Step 1: Initial peak detection
 [peaks, locs] = findpeaks(spectrum_music);
 
@@ -89,21 +90,27 @@ threshold = mean(spectrum_music);
 
 % Step 3: Identify significant peaks
 AoA_peaks = peaks(peaks > threshold);
-AoA_music_search = angles( locs(peaks > threshold) )
-
-%% Analytical estimation
+AoA_music = sort(angles( locs(peaks > threshold) ))
+DoA = sort(DoA)
+RMSE = sqrt(sum((DoA-AoA_music).^2)/M)
+%% Analytical estimation (Validation?)
 
 A_est = X*S'*inv(S*S');      % estimate of the steering matrix
 
 
 P = S*S'./N;
 [Es,Ls] = eig(A*P*A');
-[Es_part,Ls_part] = nnzmat(Es,Ls);
+[Ls ,Is]  = sort(diag(Ls),1,'descend');   %Find K largest eigenvalues
+Es = Es (:,Is);
+Es_part = Es(:,1:K);
+Ls_part = Ls(1:K);
+Ls = diag(Ls);
+Ls_part = diag(Ls_part);
 
 
 Rn = Noise*Noise'./N;
 [En,Ln] = eig(Rn);
-[Ln ,In]  = sort(diag(Ln),1,'descend');   %Find K largest eigenvalues
+[Ln ,In]  = sort(diag(Ln),1,'descend');   
 En = En (:,In);
 En_part = En(:,K+1:end);
 Ln_part = Ln(K+1:end);
@@ -122,14 +129,13 @@ Q_sum_n = Q_sum(:,K+1:end);
 disp(['norm(R) = ',num2str(norm(R,"fro"))])
 disp(['norm(R - R_hat) = ',num2str(norm(R-R_hat,"fro"))])
 
-%% Root MUSIC (using fft approach)
-
-Ftr1 = fftshift( sum( abs(fft(Qn,3*M)).^2 ,2) );
-Ftr2 = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
-[mini,I] = mink(Ftr1,K);
-electric_angles = (I-1).*2*pi/M;
-figure
-plot(1./Ftr1); hold on; grid on;
-plot(1./Ftr2); 
-legend('original','trial')
 % AoA = asin( electric_angles./(d*2*pi) )*180/pi
+%% Root MUSIC (fft approach)
+
+spectrum_root = fftshift( sum( abs(fft(Qn,3*M)).^2 ,2) );
+% trial = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
+[mini,I] = mink(spectrum_root,K);
+electric_angles = (I-1).*2*pi/M;
+% figure
+% plot(1./spectrum_root); hold on; grid on;
+% plot(1./trial); 
