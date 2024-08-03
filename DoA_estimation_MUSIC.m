@@ -49,8 +49,7 @@ for k = 1:(M - L + 1)
     x_sub = X(k:k + L - 1, :);
     R = R + (x_sub * x_sub') ./ (M - L + 1);
 end
-loading_factor = .9*trace(R)
-R_diag = R + loading_factor.*eye(L,L);
+
 %% Uncorrelated signals
 [Q ,D]  = eig(R);
 [D ,I]  = sort(diag(D),1,'descend');   %Find K largest eigenvalues
@@ -68,14 +67,6 @@ Qn = Q(:,K+1:L);    % Get the noise eigenvectors
 % Qs_coh = Q_coh(:,1:K);       % Get the signal eigenvectors
 % Qn_coh = Q_coh(:,K+1:M);    % Get the noise eigenvectors
 
-%%
-
-[Q_d ,D_d]  = eig(R_diag);
-[D_d ,I_d]  = sort(diag(D_d),1,'descend');   %Find K largest eigenvalues
-D_d = diag(D_d);
-Q_d = Q_d (:,I_d);       % Sort the eigenvectors to put signal eigenvectors first 
-Qs_d = Q_d (:,1:K);       % Get the signal eigenvectors
-Qn_d = Q_d(:,K+1:L);    % Get the noise eigenvectors
 %% Grid-search 
 for i=1:length(angles)
     % Compute MUSIC spectrum (spatial-spectrum)
@@ -120,7 +111,7 @@ RMSE = sqrt(sum((DoA-AoA_music).^2)/K)
 
 %% Root MUSIC (fft approach)
 
-N_dft = L;
+N_dft = 2*L;
 spectrum_root =  sum( abs(fft(Qn,N_dft)).^2 ,2);
 % trial = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
 
@@ -147,6 +138,9 @@ figure
 plot(index,1./spectrum_root); hold on; grid on;
 yline(threshold2,'--')
 xline(DoA,'--')
+title('FFT')
+xlabel('Angles [Degrees]')
+ylabel('PSD')
 %% Analytical estimation (Validation?)
 
 % A_estm = X*S'*inv(S*S');      % estimate of the steering matrix
