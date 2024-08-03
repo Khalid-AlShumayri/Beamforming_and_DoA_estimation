@@ -2,16 +2,11 @@ close all
 clear all 
 clc 
 
-% Comparison between three grid-search DoA approaches
-% 1- Conventional Beamformer
-% 2- Capon's Beamformer
-% 3- spectrum-MUSIC algorithm
-
-M = 16;      % sensors
+M = 128;      % sensors
 K = 3;      % number of signals (sources)
 N = 1;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
-Pn = .09;    % Noise power
+Pn = .9;    % Noise power
 sig_pr = 0.9.*ones(1,K);    % signals' power
 DoA = [-30 20 35];
 L = floor(M / 2);  % Length of subarrays
@@ -113,10 +108,12 @@ yline(threshold,'--',LineWidth=.9)
 legend('MUSIC','MUSIC w DL','Actual DoAs','threshold')
 
 % Step 3: Identify significant peaks
-AoA_peaks = peaks(peaks > threshold);
-AoA_music = sort(angles( locs(peaks > threshold) ))
+ind = sort(angles( locs(peaks > threshold) ));
+AoA_music = zeros(1,K);
+AoA_music(1,1:length(ind)) = ind
+
 DoA = sort(DoA)
-RMSE = sqrt(sum((DoA-AoA_music).^2)/L)
+RMSE = sqrt(sum((DoA-AoA_music).^2)/K)
 
 
 % AoA = asin( electric_angles./(d*2*pi) )*180/pi
@@ -128,9 +125,8 @@ spectrum_root =  sum( abs(fft(Qn,N_dft)).^2 ,2);
 % trial = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
 
 % % plot
-% figure
-% plot([-N_dft/2:1:N_dft/2-1]*360/N_dft,1./spectrum_root); hold on; grid on;
-
+freq = [-N_dft/2:1:N_dft/2-1]/N_dft;
+index = asin(freq/d)*180/pi;
 
 % % Peak detection and error
  
@@ -141,13 +137,16 @@ spectrum_root =  sum( abs(fft(Qn,N_dft)).^2 ,2);
 threshold2 = mean(1./spectrum_root);
 
 % Step 3: Identify significant peaks
-% AoA_peaks = peaks2(peaks2 > threshold2);
-% locs2 = sort(locs2);
-% electric_angles = (locs2-1).*2*pi/N_dft;
-% theta = asin(electric_angles/pi - 1);
-% RMSE_root = sqrt(sum((DoA-AoA_music).^2)/M)
+ind2 = sort(index( locs2(peaks2 > threshold2) ));
 
+AoA_fft = zeros(1,K);
+AoA_fft(1,1:length(ind2)) = ind2
+RMSE_root = sqrt(sum((DoA-AoA_fft).^2)/K)
 
+figure
+plot(index,1./spectrum_root); hold on; grid on;
+yline(threshold2,'--')
+xline(DoA,'--')
 %% Analytical estimation (Validation?)
 
 % A_estm = X*S'*inv(S*S');      % estimate of the steering matrix
