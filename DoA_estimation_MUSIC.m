@@ -2,7 +2,7 @@ close all
 clear all 
 clc 
 
-M = 128;      % sensors
+M = 10;      % sensors
 K = 3;      % number of signals (sources)
 N = 1;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
@@ -71,17 +71,17 @@ Qn = Q(:,K+1:L);    % Get the noise eigenvectors
 for i=1:length(angles)
     % Compute MUSIC spectrum (spatial-spectrum)
     srch_music(i)     = abs( 1/(a_srch(:,i)'*Qn*Qn'*a_srch(:,i)) ); 
-    srch_music_diag(i)     = abs( 1/(a_srch(:,i)'*Qn_d*Qn_d'*a_srch(:,i)) );
+%     srch_music_diag(i)     = abs( 1/(a_srch(:,i)'*Qn_d*Qn_d'*a_srch(:,i)) );
 %     srch_music_corr(i)= abs( 1/(A_srch(:,i)'*Qn_coh*Qn_coh'*A_srch(:,i)) );
 
 end
 spec_music  = srch_music;
-spec_music_diag = srch_music_diag;
+% spec_music_diag = srch_music_diag;
 % spec_music_coh = srch_music_corr;
 
 % Plot 
 plot(angles,spec_music,Color=[0 .2 .9]); hold on; grid on;
-plot(angles,spec_music_diag,Color=[.9 .2 0])
+% plot(angles,spec_music_diag,Color=[.9 .2 0])
 % plot(angles,spec_music_coh,"Color",[.8 .2 .1]) 
 xline(DoA,'-.',LineWidth=.9)
 
@@ -109,6 +109,41 @@ RMSE = sqrt(sum((DoA-AoA_music).^2)/K)
 
 % AoA = asin( electric_angles./(d*2*pi) )*180/pi
 
+%% Root MUSIC
+
+phi_xdomain = angle(exp(1i*d*pi*sin(DoA*pi/180)));
+root_Qn = roots_matrix(Qn);
+root_mag= abs(root_Qn);
+root_arg= angle(root_Qn);
+[A,indexMatrix] = sort(root_mag);
+
+figure
+polarplot(angle(root_Qn),abs(root_Qn),"o")
+% Create a linear index array for each column
+% linearIndices = indexMatrix + (0:M:(M*(M-K-1))); %works for square matrix
+
+
+%%% ---------- This block sort the mag. and arg of the roots -------- %%%
+
+[numRows, numCols] = size(root_arg); %  Get the number of rows and columns
+
+% Create row and column indices
+[rowIdx, colIdx] = ndgrid(1:numRows, 1:numCols);
+
+% Convert the row indices based on the index matrix
+rowIdx = indexMatrix(:);
+
+% Convert the column indices to match the structure of the matrix
+colIdx = colIdx(:);
+
+% Calculate the linear indices
+linearIndices = sub2ind(size(root_arg), rowIdx, colIdx);
+
+% Reorder the matrix using the linear indices
+B = reshape(root_arg(linearIndices), numRows, numCols)
+%
+%%% ----------------------------------------------------------------- %%%
+
 %% Root MUSIC (fft approach)
 
 N_dft = 2*L;
@@ -134,13 +169,13 @@ AoA_fft = zeros(1,K);
 AoA_fft(1,1:length(ind2)) = ind2
 RMSE_root = sqrt(sum((DoA-AoA_fft).^2)/K)
 
-figure
-plot(index,1./spectrum_root); hold on; grid on;
-yline(threshold2,'--')
-xline(DoA,'--')
-title('FFT')
-xlabel('Angles [Degrees]')
-ylabel('PSD')
+% figure
+% plot(index,1./spectrum_root); hold on; grid on;
+% yline(threshold2,'--')
+% xline(DoA,'--')
+% title('FFT')
+% xlabel('Angles [Degrees]')
+% ylabel('PSD')
 %% Analytical estimation (Validation?)
 
 % A_estm = X*S'*inv(S*S');      % estimate of the steering matrix
