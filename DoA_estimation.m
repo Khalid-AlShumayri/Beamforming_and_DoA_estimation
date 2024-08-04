@@ -7,7 +7,7 @@ clc
 % 2- Capon's Beamformer
 % 3- spectrum-MUSIC algorithm
 
-M = 16;      % sensors
+M = 5;      % sensors
 K = 3;      % number of signals (sources)
 N = 10;      % number of observations
 d = 0.5;    % Distance between elements in wavelengths
@@ -132,6 +132,39 @@ disp(['norm(R) = ',num2str(norm(R,"fro"))])
 disp(['norm(R - R_hat) = ',num2str(norm(R-R_hat,"fro"))])
 
 % AoA = asin( electric_angles./(d*2*pi) )*180/pi
+
+%% Root MUSIC
+
+phi_xdomain = angle(exp(1i*d*pi*sin(DoA*pi/180)));
+root_Qn = roots_matrix(Qn);
+root_mag= abs(root_Qn);
+root_arg= angle(root_Qn);
+[root_mag,indexMatrix] = sort(root_mag);
+
+% Create a linear index array for each column
+% linearIndices = indexMatrix + (0:M:(M*(M-K-1))); %works for square matrix
+
+%%% ---------- This block sort the mag. and arg of the roots ----- %%%
+
+%  Get the number of rows and columns
+[numRows, numCols] = size(root_arg);
+
+% Create row and column indices
+[rowIdx, colIdx] = ndgrid(1:numRows, 1:numCols);
+
+% Convert the row indices based on the index matrix
+rowIdx = indexMatrix(:);
+
+% Convert the column indices to match the structure of the matrix
+colIdx = colIdx(:);
+
+% Calculate the linear indices
+linearIndices = sub2ind(size(root_arg), rowIdx, colIdx);
+
+% Reorder the matrix using the linear indices
+root_arg = reshape(root_arg(linearIndices), numRows, numCols)
+
+%%% ------------------------------------------------ %%%
 
 %% Root MUSIC (fft approach)
 
