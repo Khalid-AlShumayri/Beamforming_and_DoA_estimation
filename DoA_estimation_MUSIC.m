@@ -2,7 +2,7 @@ close all
 clear all 
 clc 
 
-M = 10;      % sensors
+M = 128;      % sensors
 K = 3;      % number of signals (sources)
 N = 1;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
@@ -109,100 +109,34 @@ RMSE = sqrt(sum((DoA-AoA_music).^2)/K)
 
 % AoA = asin( electric_angles./(d*2*pi) )*180/pi
 
-%% Root MUSIC
 
-phi_xdomain = angle(exp(1i*d*pi*sin(DoA*pi/180)));
-root_Qn = roots_matrix(Qn);
-root_mag= abs(root_Qn);
-root_arg= angle(root_Qn);
-[A,indexMatrix] = sort(root_mag);
-
-figure
-polarplot(angle(root_Qn),abs(root_Qn),"o")
-% Create a linear index array for each column
-% linearIndices = indexMatrix + (0:M:(M*(M-K-1))); %works for square matrix
-
-
-%%% ---------- This block sort the mag. and arg of the roots -------- %%%
-
-[numRows, numCols] = size(root_arg); %  Get the number of rows and columns
-
-% Create row and column indices
-[rowIdx, colIdx] = ndgrid(1:numRows, 1:numCols);
-
-% Convert the row indices based on the index matrix
-rowIdx = indexMatrix(:);
-
-% Convert the column indices to match the structure of the matrix
-colIdx = colIdx(:);
-
-% Calculate the linear indices
-linearIndices = sub2ind(size(root_arg), rowIdx, colIdx);
-
-% Reorder the matrix using the linear indices
-B = reshape(root_arg(linearIndices), numRows, numCols)
-%
-%%% ----------------------------------------------------------------- %%%
-
-%% Root MUSIC (fft approach)
-
-N_dft = 2*L;
-spectrum_root =  sum( abs(fft(Qn,N_dft)).^2 ,2);
-% trial = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
-
-% % plot
-freq = [-N_dft/2:1:N_dft/2-1]/N_dft;
-index = asin(freq/d)*180/pi;
-
-% % Peak detection and error
- 
-% Step 1: Initial peak detection
-[peaks2, locs2] = findpeaks(1./spectrum_root);
-
-% Step 2: Determine a dynamic threshold
-threshold2 = mean(1./spectrum_root);
-
-% Step 3: Identify significant peaks
-ind2 = sort(index( locs2(peaks2 > threshold2) ));
-
-AoA_fft = zeros(1,K);
-AoA_fft(1,1:length(ind2)) = ind2
-RMSE_root = sqrt(sum((DoA-AoA_fft).^2)/K)
-
-% figure
-% plot(index,1./spectrum_root); hold on; grid on;
-% yline(threshold2,'--')
-% xline(DoA,'--')
-% title('FFT')
-% xlabel('Angles [Degrees]')
-% ylabel('PSD')
 %% Analytical estimation (Validation?)
 
 % A_estm = X*S'*inv(S*S');      % estimate of the steering matrix
 % theta_estm = angle(A_estm(2,:));
 
-% P = S*S'./N;
-% [Us,Ls] = eig(A*P*A');
-% [Ls ,Is]  = sort(diag(Ls),1,'descend');   %Find K largest eigenvalues
-% Us = Us (:,Is);
-% Us = Us(:,1:K);
-% Ls = Ls(1:K);
-% Ls = diag(Ls);
+P = S*S'./N;
+[Us,Ls] = eig(A*P*A');
+[Ls ,Is]  = sort(diag(Ls),1,'descend');   %Find K largest eigenvalues
+Us = Us (:,Is);
+Us = Us(:,1:K);
+Ls = Ls(1:K);
+Ls = diag(Ls);
 % 
-% Rn = Noise*Noise'./N;
-% [Un,Ln] = eig(Rn);
-% [Ln ,In]  = sort(diag(Ln),1,'descend');   
-% Un = Un (:,In);
-% Un = Un(:,K+1:end);
-% Ln = Ln(K+1:end);
-% Ln = diag(Ln);
+Rn = Noise*Noise'./N;
+[Un,Ln] = eig(Rn);
+[Ln ,In]  = sort(diag(Ln),1,'descend');   
+Un = Un (:,In);
+Un = Un(:,K+1:end);
+Ln = Ln(K+1:end);
+Ln = diag(Ln);
 % 
-% R_hat = A*P*A' + Rn;
-% [Q_sum,D_sum] = eig(R_hat);
-% [D_sum,I_sum] = sort(diag(D_sum),1,'descend');
-% Q_sum = Q_sum(:,I_sum);
-% Q_sum_s = Q_sum(:,1:K);
-% Q_sum_n = Q_sum(:,K+1:end);
+R_hat = A*P*A' + Rn;
+[Q_sum,D_sum] = eig(R_hat);
+[D_sum,I_sum] = sort(diag(D_sum),1,'descend');
+Q_sum = Q_sum(:,I_sum);
+Q_sum_s = Q_sum(:,1:K);
+Q_sum_n = Q_sum(:,K+1:end);
 % 
 % disp(['norm(R) = ',num2str(norm(R,"fro"))])
 % disp(['norm(R - R_hat) = ',num2str(norm(R-R_hat,"fro"))])
