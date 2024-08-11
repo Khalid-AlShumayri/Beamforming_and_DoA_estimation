@@ -2,21 +2,23 @@ close all
 clear all 
 clc 
 
-M = 20;      % sensors
+M =32;      % sensors
 K = 3;      % number of signals (sources)
-N = 5;     % number of observations
+N = 100;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
 Pn = .9;    % Noise power
 sig_pr = 0.9.*ones(1,K);    % signals' power
 DoA = [-30 20 60];
+
 L = floor(M / 2);  % Length of subarrays
+% L =M;
 snr = min(sig_pr)/Pn;
 Resolution = (2/(L*snr))*180/pi;
 iter = 1;
 j = 1;
 
 % Compute steering Matrix and vectors
-angles=(-90:.1:90);       % for grid search
+angles=(-90:1:90);       % for grid search
 
 % far-field assumption 
 A  = generate_steering_matrix(M,d,DoA);
@@ -48,66 +50,80 @@ Q = Q (:,I);       % Sort the eigenvectors to put signal eigenvectors first
 Qs = Q (:,1:K);       % Get the signal eigenvectors
 Qn = Q(:,K+1:L);    % Get the noise eigenvectors
 
+% Grid search
+srch_music = zeros(1, length(angles));
+for i = 1:length(angles)
+    srch_music(i) = abs(1 / (a_srch(:, i)' * Qn * Qn' * a_srch(:, i)));
+end
+
+figure
+plot(angles,10*log10(abs(srch_music))); hold on; grid on;
+xline(DoA, '-.', 'LineWidth', .9);
+
+title(['SNR = ', num2str(10 * log10(min(sig_pr) / Pn)), 'dB : Resolution = ', num2str(Resolution), ' degrees']);
+xlabel('Angle [degrees]');
+ylabel('Spatial Spectrum [dB]')
+
+
+%%% ---- Peak detection ---- %%%
+[peaks, locs] = findpeaks(srch_music);
+threshold = mean(srch_music) + std(srch_music);
+significant_peaks = angles(locs(peaks > threshold));
+detected_DoAs = sort(significant_peaks);
+DoA_music = zeros(1, K);
+DoA_music(1, 1:length(detected_DoAs)) = detected_DoAs;
+%%% ------------------------ %%%
+
+yline(10*log10(threshold), '--', 'LineWidth', .9);
+legend('MUSIC', 'Actual DoAs', 'Threshold');
+
+
+RMSE_srch = calc_rmse(DoA,DoA_music)
 %% Root MUSIC
 
 phi = exp(1i*d*2*pi*sin(DoA*pi/180));
-root_Qn = roots_cols(flipud(Qn));
-root_mag= abs(root_Qn);
-root_arg= angle(root_Qn);
-[A,indexMatrix] = sort(root_mag);
+root_Qn = roots_cols(flipud(Qn));       % flipping the signal up side down
+
+rlr = real(root_Qn);
+mgr = imag(root_Qn);
+data = [rlr(:), mgr(:)];
+
+labels = dbscan_clustering(data,.3,floor(3)); % points within the cluster is M-K
 
 figure
-polarplot(angle(root_Qn),abs(root_Qn),"o"); hold on;
-polarplot(angle(phi),abs(phi),'x',Color='black',LineWidth=1.2)
+scatter(real(root_Qn),imag(root_Qn),'o'); hold on;
+scatter(real(phi),imag(phi),'x','black')
 
-%%% ---------- This block sort the mag. and arg of the roots -------- %%%
-
-[numRows, numCols] = size(root_arg); %  Get the number of rows and columns
-
-% Create row and column indices
-[rowIdx, colIdx] = ndgrid(1:numRows, 1:numCols);
-
-% Convert the row indices based on the index matrix
-rowIdx = indexMatrix(:);
-
-% Convert the column indices to match the structure of the matrix
-colIdx = colIdx(:);
-
-% Calculate the linear indices
-linearIndices = sub2ind(size(root_arg), rowIdx, colIdx);
-
-% Reorder the matrix using the linear indices
-B = reshape(root_arg(linearIndices), numRows, numCols);
-%
-%%% ----------------------------------------------------------------- %%%
-
-
-
+figure
+scatter(real(root_Qn(labels==-1)),imag(root_Qn(labels==-1)),'o',color=[.4 .2 .6]); hold on;
+scatter(real(root_Qn(labels==0)),imag(root_Qn(labels==0)),'o',color=[.2 .4 .6]); hold on;
+scatter(real(phi),imag(phi),'x','black')% points within the cluster is M-K
 %% Root MUSIC (fft approach)
 
-N_dft = 2*L;
-spectrum_root =  sum( abs(fft(Qn,N_dft)).^2 ,2);
-% trial = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
-
-% % plot
-freq = [-N_dft/2:1:N_dft/2-1]/N_dft;
-index = asin(freq/d)*180/pi;
-
-% % Peak detection and error
- 
-% Step 1: Initial peak detection
-[peaks2, locs2] = findpeaks(1./spectrum_root);
-
-% Step 2: Determine a dynamic threshold
-threshold2 = mean(1./spectrum_root);
-
-% Step 3: Identify significant peaks
-ind2 = sort(index( locs2(peaks2 > threshold2) ));
-
-AoA_fft = zeros(1,K);
-AoA_fft(1,1:length(ind2)) = ind2
-RMSE_root = sqrt(sum((DoA-AoA_fft).^2)/K)
-
+% N_dft = L;
+% spectrum_root =  sum( abs(fft(Qn,N_dft)).^2 ,2);
+% % trial = fftshift( abs(fft(sum(Qn,2).^2,3*M)) );      % we have to take the fft of each column indiv. 
+% 
+% % % plot
+% freq = [-N_dft/2:1:N_dft/2-1]/N_dft;
+% index = asin(freq/d)*180/pi;
+% 
+% % % Peak detection and error
+%  
+% % Step 1: Initial peak detection
+% [peaks2, locs2] = findpeaks(1./spectrum_root);
+% 
+% % Step 2: Determine a dynamic threshold
+% threshold2 = mean(1./spectrum_root);
+% 
+% % Step 3: Identify significant peaks
+% ind2 = sort(index( locs2(peaks2 > threshold2) ));
+% 
+% AoA_fft = zeros(1,K);
+% AoA_fft(1,1:length(ind2)) = ind2
+% DoA
+% RMSE_root = sqrt(sum((DoA-AoA_fft).^2)/K)
+% 
 % figure
 % plot(index,1./spectrum_root); hold on; grid on;
 % yline(threshold2,'--')
@@ -115,3 +131,9 @@ RMSE_root = sqrt(sum((DoA-AoA_fft).^2)/K)
 % title('FFT')
 % xlabel('Angles [Degrees]')
 % ylabel('PSD')
+% 
+% %% Validation
+% 
+% [Un,Ln] = eig(Noise*Noise'./N);
+% P = S*S'/N;
+% [Us,Ls] = eig(A*P*A');
