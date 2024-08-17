@@ -2,29 +2,34 @@ close all
 clear all 
 clc 
 
-M =32;      % sensors
-K = 3;      % number of signals (sources)
-N = 100;     % number of observations
+M =16;      % sensors
+K=3;
+K_root = K;
+alpha = 0.1; % threshold to classify the eigenvalues
+N = 25;     % number of observations
 d = 0.5;    % Distance between elements in wavelengths
-Pn = .9;    % Noise power
-sig_pr = 0.9.*ones(1,K);    % signals' power
-DoA = [-30 20 60];
+Pn = 1;     % Noise power
+sig_pr = 0.9;
+sig_corr = sig_pr*ones(1,K);    % signals' power
+DoA = [-30 20 25];
+stepsize = 0.01;
 
-L = floor(M / 2);  % Length of subarrays
-% L =M;
-snr = min(sig_pr)/Pn;
-Resolution = (2/(L*snr))*180/pi;
+% L = floor(M / 2);  % Length of subarrays
+L = M;
+
+snr = sig_pr/Pn;
+Resolution = (2/(sqrt(N)*L*snr))*180/pi;    % Resolution of the MUSIC algorithm. Source: Chatgpt!
 iter = 1;
 j = 1;
 
 % Compute steering Matrix and vectors
-angles=(-90:1:90);       % for grid search
+angles=(-90:stepsize:90);       % for grid search
 
 % far-field assumption 
 A  = generate_steering_matrix(M,d,DoA);
 a_srch = exp(-1i*2*pi*d*(0:L-1)'*sin([angles(:).']*pi/180));
 
-S = diag(sqrt(sig_pr./2))*(randn(K,N)+1j*randn(K,N));
+S = diag(sqrt(sig_corr./2))*(randn(K,N)+1j*randn(K,N));
 
 Noise = sqrt(Pn/2)*( randn(M,N) + 1j*randn(M,N) );
 X = A*S + Noise;
@@ -41,26 +46,30 @@ for k = 1:(M - L + 1)
     x_sub = X(k:k + L - 1, :);
     R = R + (x_sub * x_sub') ./ (M - L + 1);
 end
+R = R/N;
 
 % Uncorrelated signals
 [Q ,D]  = eig(R);
+D = D./trace(D);
 [D ,I]  = sort(diag(D),1,'descend');   %Find K largest eigenvalues
+K = length(D(D>alpha));
 D = diag(D);
 Q = Q (:,I);       % Sort the eigenvectors to put signal eigenvectors first 
-Qs = Q (:,1:K);       % Get the signal eigenvectors
-Qn = Q(:,K+1:L);    % Get the noise eigenvectors
+Us = Q (:,1:K);       % Get the signal eigenvectors
+Un = Q(:,K+1:L);    % Get the noise eigenvectors
+Un_root = Q(:,K+1:L);
 
 % Grid search
 srch_music = zeros(1, length(angles));
 for i = 1:length(angles)
-    srch_music(i) = abs(1 / (a_srch(:, i)' * Qn * Qn' * a_srch(:, i)));
+    srch_music(i) = abs(1 / (a_srch(:, i)' *Un*Un' * a_srch(:, i)));
 end
 
 figure
 plot(angles,10*log10(abs(srch_music))); hold on; grid on;
 xline(DoA, '-.', 'LineWidth', .9);
 
-title(['SNR = ', num2str(10 * log10(min(sig_pr) / Pn)), 'dB : Resolution = ', num2str(Resolution), ' degrees']);
+title(['step-size = ',num2str(stepsize),': SNR = ', num2str(10 * log10(min(sig_pr) / Pn)), 'dB : Resolution = ', num2str(Resolution), ' degrees']);
 xlabel('Angle [degrees]');
 ylabel('Spatial Spectrum [dB]')
 
@@ -73,31 +82,84 @@ detected_DoAs = sort(significant_peaks);
 DoA_music = zeros(1, K);
 DoA_music(1, 1:length(detected_DoAs)) = detected_DoAs;
 %%% ------------------------ %%%
+RMSE_srch = calc_rmse(DoA,DoA_music)
 
 yline(10*log10(threshold), '--', 'LineWidth', .9);
 legend('MUSIC', 'Actual DoAs', 'Threshold');
 
 
-RMSE_srch = calc_rmse(DoA,DoA_music)
+
 %% Root MUSIC
 
 phi = exp(1i*d*2*pi*sin(DoA*pi/180));
-root_Qn = roots_cols(flipud(Qn));       % flipping the signal up side down
+root_Un = roots_cols(flipud(Un_root));       % flipping the signal up side down
 
-rlr = real(root_Qn);
-mgr = imag(root_Qn);
-data = [rlr(:), mgr(:)];
+rlr = real(root_Un);
+imgr = imag(root_Un);
+data = [rlr(:), imgr(:)];
 
-labels = dbscan_clustering(data,.3,floor(3)); % points within the cluster is M-K
+% labels = dbscan_clustering(data,.05,floor(L-K-3)); % points within the cluster is M-K
+[label,corepts] = dbscan(data,3/M,floor(M-K_root-1)); % distance ~ 1/M
+
+% plot the roots of the columns of the matrix Un 
+figure
+scatter(data(:,1),data(:,2),'o'); hold on;
+scatter(real(phi),imag(phi),'x','red',linewidth=1.2)
+
+% plot the clustered roots
+% CLR = ['blue','orange'];
+figure
+% h1 = scatter(data(label==-1,1),data(label==-1,2),'o',color=[.4 .2 .6]); hold on;
+scatter(real(phi),imag(phi),'x','red',linewidth=1.2);hold on;
+gscatter(data(:,1),data(:,2),label); 
+% for i=1:K
+%     scatter(data(label==i,1),data(label==i,2),'o');
+% end
+
+%%
+% Step 2: Calculate the number of clusters
+uniqueClusters = unique(label(label > 0));  % Exclude noise (clusters labeled as 0)
+numClusters = length(uniqueClusters);
+
+% Step 3: Split large clusters until the number of clusters matches knownNumClusters
+while numClusters < K
+    % Find the largest cluster
+    clusterSizes = histcounts(label, uniqueClusters);
+    [~, maxClusterIdx] = max(clusterSizes);
+    maxClusterLabel = uniqueClusters(maxClusterIdx);
+    
+    % Extract points belonging to the largest cluster
+    clusterPoints = data(label == maxClusterLabel, :);
+    
+    % Split the largest cluster using K-means
+    k = 2; % Start by splitting into 2 clusters, adjust as needed
+    [newIdx, ~] = kmeans(clusterPoints, k, 'Replicates', 5);
+    
+    % Update the original clustering result
+    maxLabel = max(label); % Find the maximum label in the current idx
+    for i = 1:k
+        label(label == maxClusterLabel & newIdx == i) = maxLabel + i;
+    end
+    
+    % Recalculate the number of clusters
+    uniqueClusters = unique(label(label > 0));  % Exclude noise (clusters labeled as 0)
+    numClusters = length(uniqueClusters);
+end
 
 figure
-scatter(real(root_Qn),imag(root_Qn),'o'); hold on;
-scatter(real(phi),imag(phi),'x','black')
+gscatter(rlr,imgr,label)
+%%
 
-figure
-scatter(real(root_Qn(labels==-1)),imag(root_Qn(labels==-1)),'o',color=[.4 .2 .6]); hold on;
-scatter(real(root_Qn(labels==0)),imag(root_Qn(labels==0)),'o',color=[.2 .4 .6]); hold on;
-scatter(real(phi),imag(phi),'x','black')% points within the cluster is M-K
+phi_dbscan = center_median(data,label,K);
+DoA_dbscan = asin(angle(phi_dbscan)/(2*pi*d))*180/pi;
+rmse_dbscan = calc_rmse(DoA,DoA_dbscan)
+
+% points within the cluster is M-K
+h2 = scatter(real(phi),imag(phi),'x','red') ;
+h3 = scatter(real(phi_dbscan),imag(phi_dbscan),'x','black');
+legend([h1,h2,h3],{'Noise','Ground Truth','Predicted'})
+
+title(['Roots of the columns of the matrix Un'])
 %% Root MUSIC (fft approach)
 
 % N_dft = L;
@@ -132,8 +194,12 @@ scatter(real(phi),imag(phi),'x','black')% points within the cluster is M-K
 % xlabel('Angles [Degrees]')
 % ylabel('PSD')
 % 
-% %% Validation
-% 
-% [Un,Ln] = eig(Noise*Noise'./N);
-% P = S*S'/N;
-% [Us,Ls] = eig(A*P*A');
+%% Validation
+
+Rn = Noise*Noise'/N;
+Rv = inv(Rn);
+[Qn,Dn] = eig(Rn);
+P = S*S'/N;
+[Qs,Ds] = eig(A*P*A');
+
+test = Rv - Rv*A*inv(eye(k,k) + P*A'*Rv*A)*P*A'*Rv;
