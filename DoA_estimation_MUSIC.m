@@ -3,8 +3,9 @@ clear all
 clc 
 
 % Parameters
-M = 16;      % sensors
-K = 2;      % number of signals (sources)
+DoA = [0 40 69];
+M = 8;      % sensors
+K = 3;      % number of signals (sources)
 N = 50;     % number of observations (snapshots)
 d = 0.5;    % Distance between elements in wavelengths
 snr = 10;   %dB
@@ -12,18 +13,17 @@ snr_linear = 10^(snr/10);
 sig_pr = 1 .* ones(1, K);    % signals' power
 max_sig_pr = max(sig_pr);
 Pn = max_sig_pr*10^(-snr/10);    % Noise power
-DoA = [40 69];
 num_iterations = 100;  % Number of Monte Carlo iterations
-stepsize = .5;
-angles = -90:stepsize:90;  % for grid search 
+stepsize = 1;
 Res = (2/M) * 180 / pi;
 
-L = floor(M / 2);  % Length of subarrays
+L = floor(M / 2);  % Length of subarrays (spatial smoothing)
 
 
 % Far-field assumption 
+angles = -90:stepsize:90;  % for grid search 
+a = exp(-1i * 2 * pi * d * (0:M-1)' * sin([angles(:).'] * pi / 180));
 a_sps = exp(-1i * 2 * pi * d * (0:L-1)' * sin([angles(:).'] * pi / 180));
-a_coh = exp(-1i * 2 * pi * d * (0:M-1)' * sin([angles(:).'] * pi / 180));
 A = generate_steering_matrix(M, d, DoA);
 
 % Initialize results
@@ -38,9 +38,9 @@ for iter = 1:num_iterations
     S = diag(sqrt(sig_pr ./ 2)) * (randn(K, N) + 1j * randn(K, N));
     Noise = sqrt(Pn / 2) * (randn(M, N) + 1j * randn(M, N));
     X = A * S + Noise;
-
+    R = X*X'./N;
     % Generate correlated sources
-    P_ch =  reshape([1 .6  1 .6],K,K);
+    P_ch =  reshape([1 .6 .1 .6  1 .1 .1 .1 1],K,K);
 
     Lr = chol(P_ch, "lower");
     S_ch = Lr * S;
@@ -49,7 +49,7 @@ for iter = 1:num_iterations
 
     % Compute spatially smoothed covariance matrix
     R_sps = zeros(L, L);
-    R_ch_sps = zeros(L, L);;
+    R_ch_sps = zeros(L, L);
     for k = 1:(M - L + 1)
         x_sub = X(k:k + L - 1, :);
         x_ch = X_ch(k:k+L-1,:);
@@ -58,19 +58,19 @@ for iter = 1:num_iterations
     end
 
     % MUSIC Algorithm for uncorrelated signals
-    [Q, D] = eig(R_sps);
+    [Q, D] = eig(R);
     [D, I] = sort(diag(D), 1, 'descend');
     D = diag(D);
     Q = Q(:, I);
     Qs = Q(:, 1:K);
-    Qn = Q(:, K+1:L);
+    Qn = Q(:, K+1:end);
 
     % MUSIC Algorithm for correlated signals
     [Q, D] = eig(R_ch);
     [D, I] = sort(diag(D), 1, 'descend');
     D = diag(D);
     Q = Q(:, I);
-    Qn_ch = Q(:, K+1:M);
+    Qn_ch = Q(:, K+1:end);
 
     % MUSIC Algorithm for correlated signals
     [Q, D] = eig(R_ch_sps);
@@ -81,19 +81,19 @@ for iter = 1:num_iterations
 
 
     % Grid search
-    srch_sps    = zeros(1, length(angles));
+    srch_music    = zeros(1, length(angles));
     srch_ch     = zeros(1, length(angles));
     srch_ch_sps = zeros(1, length(angles));
 
     for i = 1:length(angles)
-        srch_sps(i)    = abs(1 / (a_sps(:, i)' * Qn * Qn' * a_sps(:, i)));
+        srch_music(i)    = abs(1 / (a(:, i)' * Qn * Qn' * a(:, i)));
         srch_ch_sps(i) = abs(1 / (a_sps(:, i)' * Qn_ch_sps * Qn_ch_sps' * a_sps(:, i)));
-        srch_ch(i)     = abs(1 / (a_coh(:, i)' * Qn_ch* Qn_ch' * a_coh(:, i)));
+        srch_ch(i)     = abs(1 / (a(:, i)' * Qn_ch* Qn_ch' * a(:, i)));
     end
 
     %%% ---- Peak detection ---- %%%
-    [peaks, locs1] = findpeaks(srch_sps);
-    threshold = mean(srch_sps) + 0.5*std(srch_sps);
+    [peaks, locs1] = findpeaks(srch_music);
+    threshold = mean(srch_music) + 0.5*std(srch_music);
     significant_peaks = angles(locs1(peaks > threshold));
     detected_DoAs = sort(significant_peaks);
     DoA_music = zeros(1, K);
@@ -126,15 +126,16 @@ rmse_sps    = mean(rmse_values);
 rmse_ch     = mean(rmse_values_ch);
 rmse_ch_sps = mean(rmse_values_ch_sps);
 
-disp(['Mean RMSE (uncorrelated signals + SPS) over ',num2str(num_iterations), ' iterations: ', num2str(rmse_sps)]);
-disp(['Mean RMSE (correlated signals) over ',num2str(num_iterations), ' iterations: ', num2str(rmse_ch)]);
-disp(['Mean RMSE (correlated signals + SPS) over ',num2str(num_iterations), ' iterations: ', num2str(rmse_ch_sps)]);
+disp(['Mean RMSE (uncorrelated signals): ', num2str(rmse_sps)]);
+disp(['Mean RMSE (correlated signals): ', num2str(rmse_ch)]);
+disp(['Mean RMSE (correlated signals + SPS): ', num2str(rmse_ch_sps)]);
 disp(['Step-size = ',num2str(stepsize),' degrees']);
+disp(['Number of iterations = ',num2str(num_iterations)])
 
 % Plot example of the last iteration
 figure;
 hold on; grid on;
-h1 = plot(angles, srch_sps, 'Color', [0 .2 .9]); 
+h1 = plot(angles, srch_music, 'Color', [0 .2 .9]); 
 h2 = plot(angles, srch_ch); 
 h3 = plot(angles,srch_ch_sps);
 h4 = xline(DoA, '-.', 'LineWidth', .9,Color='black');
